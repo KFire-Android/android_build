@@ -892,7 +892,7 @@ define transform-proto-to-java
 $(hide) for f in $(PRIVATE_PROTO_SRC_FILES); do \
         $(PROTOC) \
         $(addprefix --proto_path=, $(PRIVATE_PROTO_INCLUDES)) \
-        $(PRIVATE_PROTO_JAVA_OUTPUT_OPTION)=$(PRIVATE_PROTO_JAVA_OUTPUT_DIR) \
+        $(PRIVATE_PROTO_JAVA_OUTPUT_OPTION)="$(PRIVATE_PROTO_JAVA_OUTPUT_PARAMS):$(PRIVATE_PROTO_JAVA_OUTPUT_DIR)" \
         $(PRIVATE_PROTOC_FLAGS) \
         $$f || exit 33; \
         done
@@ -2149,6 +2149,9 @@ endef
 # Rules and functions to help copy important files to DIST_DIR
 # when requested.
 include $(BUILD_SYSTEM)/distdir.mk
+
+# Include any vendor specific definitions.mk file
+-include $(TOPDIR)vendor/*/build/core/definitions.mk
 
 # broken:
 #	$(foreach file,$^,$(if $(findstring,.a,$(suffix $file)),-l$(file),$(file)))
