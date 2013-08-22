@@ -121,9 +121,10 @@ TARGET_GLOBAL_CFLAGS += $(TARGET_ANDROID_CONFIG_CFLAGS)
 # We cannot turn it off blindly since the option is not available
 # in gcc-4.4.x.  We also want to disable sincos optimization globally
 # by turning off the builtin sin function.
-ifneq ($(filter 4.6 4.6.% 4.7 4.7.%, $(TARGET_GCC_VERSION)),)
+ifneq ($(filter 4.6 4.6.% 4.7 4.7.% 4.8, $(TARGET_GCC_VERSION)),)
 TARGET_GLOBAL_CFLAGS += -Wno-unused-but-set-variable -fno-builtin-sin \
-			-fno-strict-volatile-bitfields
+			-fno-strict-volatile-bitfields \
+			-Wno-unused-parameter -Wno-unused-but-set-parameter
 endif
 
 # This is to avoid the dreaded warning compiler message:
@@ -253,11 +254,11 @@ $(hide) $(PRIVATE_CXX) \
 	$(call normalize-target-libraries,$(PRIVATE_ALL_STATIC_LIBRARIES)) \
 	$(if $(PRIVATE_GROUP_STATIC_LIBRARIES),-Wl$(comma)--end-group) \
 	$(if $(TARGET_BUILD_APPS),$(PRIVATE_TARGET_LIBGCC)) \
+	$(PRIVATE_TARGET_FDO_LIB) \
 	$(call normalize-target-libraries,$(PRIVATE_ALL_SHARED_LIBRARIES)) \
 	-o $@ \
 	$(PRIVATE_TARGET_GLOBAL_LDFLAGS) \
 	$(PRIVATE_LDFLAGS) \
-	$(PRIVATE_TARGET_FDO_LIB) \
 	$(PRIVATE_TARGET_LIBGCC) \
 	$(if $(filter true,$(PRIVATE_NO_CRT)),,$(PRIVATE_TARGET_CRTEND_SO_O))
 endef
@@ -278,11 +279,11 @@ $(hide) $(PRIVATE_CXX) -nostdlib -Bdynamic $(PIE_EXECUTABLE_TRANSFORM) \
 	$(call normalize-target-libraries,$(PRIVATE_ALL_STATIC_LIBRARIES)) \
 	$(if $(PRIVATE_GROUP_STATIC_LIBRARIES),-Wl$(comma)--end-group) \
 	$(if $(TARGET_BUILD_APPS),$(PRIVATE_TARGET_LIBGCC)) \
+	$(PRIVATE_TARGET_FDO_LIB) \
 	$(call normalize-target-libraries,$(PRIVATE_ALL_SHARED_LIBRARIES)) \
 	-o $@ \
 	$(PRIVATE_TARGET_GLOBAL_LDFLAGS) \
 	$(PRIVATE_LDFLAGS) \
-	$(PRIVATE_TARGET_FDO_LIB) \
 	$(PRIVATE_TARGET_LIBGCC) \
 	$(if $(filter true,$(PRIVATE_NO_CRT)),,$(PRIVATE_TARGET_CRTEND_O))
 endef
