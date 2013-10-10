@@ -42,8 +42,8 @@ include $(TARGET_ARCH_SPECIFIC_MAKEFILE)
 
 # You can set TARGET_TOOLS_PREFIX to get gcc from somewhere else
 ifeq ($(strip $(TARGET_TOOLS_PREFIX)),)
-TARGET_TOOLCHAIN_ROOT := prebuilts/gcc/$(HOST_PREBUILT_TAG)/x86/i686-linux-android-$(TARGET_GCC_VERSION)
-TARGET_TOOLS_PREFIX := $(TARGET_TOOLCHAIN_ROOT)/bin/i686-linux-android-
+TARGET_TOOLCHAIN_ROOT := prebuilts/gcc/$(HOST_PREBUILT_TAG)/x86/x86_64-linux-android-$(TARGET_GCC_VERSION)
+TARGET_TOOLS_PREFIX := $(TARGET_TOOLCHAIN_ROOT)/bin/x86_64-linux-android-
 endif
 
 TARGET_CC := $(TARGET_TOOLS_PREFIX)gcc$(HOST_EXECUTABLE_SUFFIX)
@@ -131,7 +131,8 @@ TARGET_GLOBAL_CFLAGS += \
 			-fstrict-aliasing \
 			-funswitch-loops \
 			-funwind-tables \
-			-fstack-protector
+			-fstack-protector \
+			-m32
 
 android_config_h := $(call select-android-config-h,target_linux-x86)
 TARGET_ANDROID_CONFIG_CFLAGS := -include $(android_config_h) -I $(dir $(android_config_h))
@@ -141,23 +142,29 @@ TARGET_GLOBAL_CFLAGS += $(TARGET_ANDROID_CONFIG_CFLAGS)
 TARGET_GLOBAL_CPPFLAGS += \
 			-fno-use-cxa-atexit
 
-# XXX: Our toolchain is normally configured to always set these flags by default
-# however, there have been reports that this is sometimes not the case. So make
-# them explicit here unless we have the time to carefully check it
-#
-TARGET_GLOBAL_CFLAGS += -mstackrealign -msse3 -mfpmath=sse -m32
-
-# XXX: These flags should not be defined here anymore. Instead, the Android.mk
-# of the modules that depend on these features should instead check the
-# corresponding macros (e.g. ARCH_X86_HAVE_SSE2 and ARCH_X86_HAVE_SSSE3)
-# Keep them here until this is all cleared up.
-#
-ifeq ($(ARCH_X86_HAVE_SSE2),true)
-TARGET_GLOBAL_CFLAGS += -DUSE_SSE2
-endif
+TARGET_GLOBAL_CFLAGS += $(arch_variant_cflags)
+TARGET_GLOBAL_CFLAGS += -mmmx
+TARGET_GLOBAL_CFLAGS += -msse
+TARGET_GLOBAL_CFLAGS += -DUSE_SSE2 -msse2
+TARGET_GLOBAL_CFLAGS += -msse3
 
 ifeq ($(ARCH_X86_HAVE_SSSE3),true)   # yes, really SSSE3, not SSE3!
-TARGET_GLOBAL_CFLAGS += -DUSE_SSSE3
+    TARGET_GLOBAL_CFLAGS += -DUSE_SSSE3 -mssse3
+endif
+ifeq ($(ARCH_X86_HAVE_SSE4),true)
+    TARGET_GLOBAL_CFLAGS += -msse4
+endif
+ifeq ($(ARCH_X86_HAVE_SSE4_1),true)
+    TARGET_GLOBAL_CFLAGS += -msse4.1
+endif
+ifeq ($(ARCH_X86_HAVE_SSE4_2),true)
+    TARGET_GLOBAL_CFLAGS += -msse4.2
+endif
+ifeq ($(ARCH_X86_HAVE_AVX),true)
+    TARGET_GLOBAL_CFLAGS += -mavx
+endif
+ifeq ($(ARCH_X86_HAVE_AES_NI),true)
+    TARGET_GLOBAL_CFLAGS += -maes
 endif
 
 # XXX: This flag is probably redundant. I believe our toolchain always sets
@@ -173,10 +180,6 @@ TARGET_GLOBAL_CFLAGS += -mbionic
 #
 TARGET_GLOBAL_CFLAGS += -D__ANDROID__
 
-# XXX: This flag is probably redundant since our toolchain binaries already
-# generate 32-bit machine code. It probably dates back to the old days
-# where we were using the host toolchain on Linux to build the platform
-# images. Consider it for removal.
 TARGET_GLOBAL_LDFLAGS += -m32
 
 TARGET_GLOBAL_LDFLAGS += -Wl,-z,noexecstack
@@ -233,7 +236,6 @@ define transform-o-to-executable-inner
 $(hide) $(PRIVATE_CXX) \
 	$(PRIVATE_TARGET_GLOBAL_LDFLAGS) \
 	-nostdlib -Bdynamic \
-	-Wl,-dynamic-linker,/system/bin/linker \
 	-Wl,-z,nocopyreloc \
 	-fPIE -pie \
 	$(PRIVATE_TARGET_GLOBAL_LD_DIRS) \
@@ -274,21 +276,3 @@ $(hide) $(PRIVATE_CXX) \
 	-Wl,--end-group \
 	$(if $(filter true,$(PRIVATE_NO_CRT)),,$(PRIVATE_TARGET_CRTEND_O))
 endef
-
-# Special check for x86 NDK ABI compatibility.
-# The TARGET_CPU_ABI variable should be defined in BoardConfig.mk to 'x86'
-# *only* if the platform image is compatible with the NDK x86 ABI.
-#
-# We perform a small check here to ensure that nothing bad can happen.
-#
-ifeq ($(TARGET_CPU_ABI),x86)
-  ifneq (true-true-true-true,$(ARCH_X86_HAVE_MMX)-$(ARCH_X86_HAVE_SSE)-$(ARCH_X86_HAVE_SSE2)-$(ARCH_X86_HAVE_SSE3))
-    $(info ERROR: Your x86 platform image is not compatible with the NDK x86 ABI)
-    $(info As such, you should *not* define TARGET_CPU_ABI to 'x86' in your BoardConfig.mk)
-    $(info to ensure that your device will not be mistakenly listed as compatible by
-    $(info the Android Market. Also, it is likely that the image will fail the CTS tests)
-    $(info Please undefine TARGET_CPU_ABI in your BoardConfig.mk, or select the value 'none')
-    $(info The corresponding image will still be able to run Dalvik-based Android applications)
-    $(error Aborting build! Please fix your BoardConfig.mk)
-  endif
-endif

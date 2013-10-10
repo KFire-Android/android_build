@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2006 The Android Open Source Project
+# Copyright (C) 2013 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,11 +31,11 @@
 # version.
 #
 ifeq ($(strip $(TARGET_ARCH_VARIANT)),)
-TARGET_ARCH_VARIANT := armv5te
+TARGET_ARCH_VARIANT := armv8
 endif
 
 ifeq ($(strip $(TARGET_GCC_VERSION_EXP)),)
-TARGET_GCC_VERSION := 4.7
+TARGET_GCC_VERSION := 4.8
 else
 TARGET_GCC_VERSION := $(TARGET_GCC_VERSION_EXP)
 endif
@@ -49,8 +49,8 @@ include $(TARGET_ARCH_SPECIFIC_MAKEFILE)
 
 # You can set TARGET_TOOLS_PREFIX to get gcc from somewhere else
 ifeq ($(strip $(TARGET_TOOLS_PREFIX)),)
-TARGET_TOOLCHAIN_ROOT := prebuilts/gcc/$(HOST_PREBUILT_TAG)/arm/arm-linux-androideabi-$(TARGET_GCC_VERSION)
-TARGET_TOOLS_PREFIX := $(TARGET_TOOLCHAIN_ROOT)/bin/arm-linux-androideabi-
+TARGET_TOOLCHAIN_ROOT := prebuilts/gcc/$(HOST_PREBUILT_TAG)/aarch64/aarch64-linux-android-$(TARGET_GCC_VERSION)
+TARGET_TOOLS_PREFIX := $(TARGET_TOOLCHAIN_ROOT)/bin/aarch64-linux-android-
 endif
 
 TARGET_CC := $(TARGET_TOOLS_PREFIX)gcc$(HOST_EXECUTABLE_SUFFIX)
@@ -68,64 +68,28 @@ endif
 
 TARGET_NO_UNDEFINED_LDFLAGS := -Wl,--no-undefined
 
-TARGET_arm_CFLAGS :=    -O2 \
-                        -fomit-frame-pointer \
-                        -fstrict-aliasing    \
-                        -funswitch-loops
-
-# Modules can choose to compile some source as thumb.
-TARGET_thumb_CFLAGS :=  -mthumb \
-                        -Os \
-                        -fomit-frame-pointer \
-                        -fno-strict-aliasing
-
-# Set FORCE_ARM_DEBUGGING to "true" in your buildspec.mk
-# or in your environment to force a full arm build, even for
-# files that are normally built as thumb; this can make
-# gdb debugging easier.  Don't forget to do a clean build.
-#
-# NOTE: if you try to build a -O0 build with thumb, several
-# of the libraries (libpv, libwebcore, libkjs) need to be built
-# with -mlong-calls.  When built at -O0, those libraries are
-# too big for a thumb "BL <label>" to go from one end to the other.
-ifeq ($(FORCE_ARM_DEBUGGING),true)
-  TARGET_arm_CFLAGS += -fno-omit-frame-pointer -fno-strict-aliasing
-  TARGET_thumb_CFLAGS += -marm -fno-omit-frame-pointer
-endif
-
-ifeq ($(TARGET_DISABLE_ARM_PIE),true)
-   PIE_GLOBAL_CFLAGS :=
-   PIE_EXECUTABLE_TRANSFORM := -Wl,-T,$(BUILD_SYSTEM)/armelf.x
-else
-   PIE_GLOBAL_CFLAGS := -fPIE
-   PIE_EXECUTABLE_TRANSFORM := -fPIE -pie
-endif
+android_config_h := $(call select-android-config-h,linux-aarch64)
 
 TARGET_GLOBAL_CFLAGS += \
-			-msoft-float -fpic $(PIE_GLOBAL_CFLAGS) \
+			-fpic -fPIE \
+			$(arch_variant_cflags) \
+			-include $(android_config_h) \
+			-I $(dir $(android_config_h))
+
+TARGET_GLOBAL_CFLAGS += \
+			-fpic -fPIE \
 			-ffunction-sections \
 			-fdata-sections \
 			-funwind-tables \
-			-fstack-protector \
 			-Wa,--noexecstack \
 			-Werror=format-security \
 			-D_FORTIFY_SOURCE=2 \
 			-fno-short-enums \
-			$(arch_variant_cflags)
+			$(arch_variant_cflags) \
+			-include $(android_config_h) \
+			-I $(dir $(android_config_h))
 
-android_config_h := $(call select-android-config-h,linux-arm)
-TARGET_ANDROID_CONFIG_CFLAGS := -include $(android_config_h) -I $(dir $(android_config_h))
-TARGET_GLOBAL_CFLAGS += $(TARGET_ANDROID_CONFIG_CFLAGS)
-
-# The "-Wunused-but-set-variable" option often breaks projects that enable
-# "-Wall -Werror" due to a commom idiom "ALOGV(mesg)" where ALOGV is turned
-# into no-op in some builds while mesg is defined earlier. So we explicitly
-# disable "-Wunused-but-set-variable" here.
-ifneq ($(filter 4.6 4.6.% 4.7 4.7.% 4.8, $(TARGET_GCC_VERSION)),)
-TARGET_GLOBAL_CFLAGS += -Wno-unused-but-set-variable -fno-builtin-sin \
-			-fno-strict-volatile-bitfields \
-			-Wno-unused-parameter -Wno-unused-but-set-parameter
-endif
+TARGET_GLOBAL_CFLAGS += -fno-strict-volatile-bitfields
 
 # This is to avoid the dreaded warning compiler message:
 #   note: the mangling of 'va_list' has changed in GCC 4.4
@@ -143,17 +107,14 @@ TARGET_GLOBAL_LDFLAGS += \
 			-Wl,-z,now \
 			-Wl,--warn-shared-textrel \
 			-Wl,--fatal-warnings \
-			-Wl,--icf=safe \
 			$(arch_variant_ldflags)
-
-TARGET_GLOBAL_CFLAGS += -mthumb-interwork
 
 TARGET_GLOBAL_CPPFLAGS += -fvisibility-inlines-hidden
 
 # More flags/options can be added here
 TARGET_RELEASE_CFLAGS := \
 			-DNDEBUG \
-			-g \
+			-O2 -g \
 			-Wstrict-aliasing=2 \
 			-fgcse-after-reload \
 			-frerun-cse-after-loop \
@@ -163,45 +124,6 @@ libc_root := bionic/libc
 libm_root := bionic/libm
 libstdc++_root := bionic/libstdc++
 libthread_db_root := bionic/libthread_db
-
-
-## on some hosts, the target cross-compiler is not available so do not run this command
-ifneq ($(wildcard $(TARGET_CC)),)
-# We compile with the global cflags to ensure that
-# any flags which affect libgcc are correctly taken
-# into account.
-TARGET_LIBGCC := $(shell $(TARGET_CC) $(TARGET_GLOBAL_CFLAGS) -print-libgcc-file-name)
-target_libgcov := $(shell $(TARGET_CC) $(TARGET_GLOBAL_CFLAGS) \
-        -print-file-name=libgcov.a)
-endif
-
-# Define FDO (Feedback Directed Optimization) options.
-
-TARGET_FDO_CFLAGS:=
-TARGET_FDO_LIB:=
-
-ifneq ($(strip $(BUILD_FDO_INSTRUMENT)),)
-  # Set BUILD_FDO_INSTRUMENT=true to turn on FDO instrumentation.
-  # The profile will be generated on /data/local/tmp/profile on the device.
-  TARGET_FDO_CFLAGS := -fprofile-generate=/data/local/tmp/profile -DANDROID_FDO
-  TARGET_FDO_LIB := $(target_libgcov)
-else
-  # If BUILD_FDO_INSTRUMENT is turned off, then consider doing the FDO optimizations.
-  # Set TARGET_FDO_PROFILE_PATH to set a custom profile directory for your build.
-  ifeq ($(strip $(TARGET_FDO_PROFILE_PATH)),)
-    TARGET_FDO_PROFILE_PATH := fdo/profiles/$(TARGET_ARCH)/$(TARGET_ARCH_VARIANT)
-  else
-    ifeq ($(strip $(wildcard $(TARGET_FDO_PROFILE_PATH))),)
-      $(warning Custom TARGET_FDO_PROFILE_PATH supplied, but directory does not exist. Turn off FDO.)
-    endif
-  endif
-
-  # If the FDO profile directory can't be found, then FDO is off.
-  ifneq ($(strip $(wildcard $(TARGET_FDO_PROFILE_PATH))),)
-    TARGET_FDO_CFLAGS := -fprofile-use=$(TARGET_FDO_PROFILE_PATH) -DANDROID_FDO
-    TARGET_FDO_LIB := $(target_libgcov)
-  endif
-endif
 
 
 # unless CUSTOM_KERNEL_HEADERS is defined, we're going to use
@@ -218,20 +140,22 @@ endif
 KERNEL_HEADERS := $(KERNEL_HEADERS_COMMON) $(KERNEL_HEADERS_ARCH)
 
 TARGET_C_INCLUDES := \
-	$(libc_root)/arch-arm/include \
+	$(libc_root)/arch-aarch64/include \
 	$(libc_root)/include \
 	$(libstdc++_root)/include \
 	$(KERNEL_HEADERS) \
 	$(libm_root)/include \
-	$(libm_root)/include/arm \
+	$(libm_root)/include/aarch64 \
 	$(libthread_db_root)/include
 
-TARGET_CRTBEGIN_STATIC_O := $(TARGET_OUT_INTERMEDIATE_LIBRARIES)/crtbegin_static.o
-TARGET_CRTBEGIN_DYNAMIC_O := $(TARGET_OUT_INTERMEDIATE_LIBRARIES)/crtbegin_dynamic.o
-TARGET_CRTEND_O := $(TARGET_OUT_INTERMEDIATE_LIBRARIES)/crtend_android.o
+# FIXME
+# CRT* objects to be added later
+TARGET_CRTBEGIN_STATIC_O :=
+TARGET_CRTBEGIN_DYNAMIC_O :=
+TARGET_CRTEND_O :=
 
-TARGET_CRTBEGIN_SO_O := $(TARGET_OUT_INTERMEDIATE_LIBRARIES)/crtbegin_so.o
-TARGET_CRTEND_SO_O := $(TARGET_OUT_INTERMEDIATE_LIBRARIES)/crtend_so.o
+TARGET_CRTBEGIN_SO_O :=
+TARGET_CRTEND_SO_O :=
 
 TARGET_STRIP_MODULE:=true
 
@@ -242,7 +166,6 @@ TARGET_CUSTOM_LD_COMMAND := true
 define transform-o-to-shared-lib-inner
 $(hide) $(PRIVATE_CXX) \
 	-nostdlib -Wl,-soname,$(notdir $@) \
-	-Wl,--gc-sections \
 	-Wl,-shared,-Bsymbolic \
 	$(PRIVATE_TARGET_GLOBAL_LD_DIRS) \
 	$(if $(filter true,$(PRIVATE_NO_CRT)),,$(PRIVATE_TARGET_CRTBEGIN_SO_O)) \
@@ -264,9 +187,8 @@ $(hide) $(PRIVATE_CXX) \
 endef
 
 define transform-o-to-executable-inner
-$(hide) $(PRIVATE_CXX) -nostdlib -Bdynamic $(PIE_EXECUTABLE_TRANSFORM) \
-	-Wl,-dynamic-linker,/system/bin/linker \
-	-Wl,--gc-sections \
+$(hide) $(PRIVATE_CXX) -nostdlib -Bdynamic -fPIE -pie \
+	-Wl,-dynamic-linker,/system/bin/linker64 \
 	-Wl,-z,nocopyreloc \
 	$(PRIVATE_TARGET_GLOBAL_LD_DIRS) \
 	-Wl,-rpath-link=$(TARGET_OUT_INTERMEDIATE_LIBRARIES) \
@@ -289,8 +211,7 @@ $(hide) $(PRIVATE_CXX) -nostdlib -Bdynamic $(PIE_EXECUTABLE_TRANSFORM) \
 endef
 
 define transform-o-to-static-executable-inner
-$(hide) $(PRIVATE_CXX) -nostdlib -Bstatic \
-	-Wl,--gc-sections \
+$(hide) $(PRIVATE_CXX) -Bstatic \
 	-o $@ \
 	$(PRIVATE_TARGET_GLOBAL_LD_DIRS) \
 	$(if $(filter true,$(PRIVATE_NO_CRT)),,$(PRIVATE_TARGET_CRTBEGIN_STATIC_O)) \
